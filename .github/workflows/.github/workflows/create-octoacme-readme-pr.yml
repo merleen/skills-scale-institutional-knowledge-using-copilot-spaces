@@ -1,0 +1,94 @@
+# Add this file to the repository to enable automated PR creation
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  create-readme-pr:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_ISSUE: "2"
+      PR_BRANCH: "docs/add-octoacme-readme"
+      PR_TITLE: "[Docs] Add OctoAcme process README"
+      PR_BODY: |
+        This PR adds docs/README.md — a brief overview of OctoAcme project management processes and direct links to the process documents in docs/.
+
+        Related: #2
+    steps:
+      - name: Check trigger and guardrails
+        id: guard
+        run: |
+          # Allow manual runs (workflow_dispatch) or issue comment with the trigger phrase targeted at the right issue
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual dispatch allowed."
+            exit 0
+          fi
+
+          # For issue_comment events, require exact trigger phrase and correct issue number for safety
+          COMMENT="${{ github.event.comment.body }}"
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          if ! echo "$COMMENT" | grep -q "/create-octoacme-readme"; then
+            echo "No trigger phrase found in comment; exiting."
+            exit 0
+          fi
+          if [ "$ISSUE_NUMBER" != "$TARGET_ISSUE" ]; then
+            echo "Comment not on target issue $TARGET_ISSUE; exiting."
+            exit 0
+          fi
+          echo "Trigger validated."
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create docs/README.md
+        run: |
+          mkdir -p docs
+          cat > docs/README.md <<'EOF'
+# OctoAcme Project Management Docs
+
+This folder contains OctoAcme's project management process documents and quick references. The guidance here describes how we initiate, plan, execute, release, and improve work across cross-functional teams so contributors and stakeholders can move from idea to production with predictable quality and visible progress.
+
+OctoAcme follows an iterative, customer-first approach with clearly named owners for delivery and product outcomes. Projects start with a lightweight one‑pager to define the problem, success metrics, stakeholders, and a go/no‑go decision. Approved initiatives move into planning where work is broken into shippable increments, acceptance criteria are defined, dependencies and risks are captured in a risk register, and a release/milestone map is created.
+
+Day-to-day execution uses a project board and a small-PR + CI-based pull request workflow that enforces automated tests, linting, security scans, and at least one approval before merging. Team rhythm includes daily standups for blockers and progress, regular delivery syncs and demos, and a documented escalation path for blockers. Releases follow a standardized checklist (staging smoke tests, rollback plan, post-deploy verification) and incident playbooks for rapid response.
+
+Continuous improvement is enforced through timeboxed retrospectives after sprints, releases, and incidents. Action items from retrospectives are owned, tracked in the backlog, and reviewed in weekly PM syncs to ensure measurable impact. Use the links below to jump to details on initiation, planning, execution, risk & communication, release, retrospectives, and role definitions.
+
+Process documents
+- octoacme-project-management-overview.md
+- octoacme-project-initiation.md
+- octoacme-project-planning.md
+- octoacme-execution-and-tracking.md
+- octoacme-risks-and-communication.md
+- octoacme-release-and-deployment.md
+- octoacme-retrospective-and-continuous-improvement.md
+- octoacme-roles-and-personas.md
+
+How to use this folder
+- Keep the Project One-pager and project README updated in the project repo.
+- Add process-specific or team-specific variants into `.copilot/` if you want Copilot Spaces to use them as context.
+- Use the provided issue template (.github/ISSUE_TEMPLATE/) to propose updates to any of these docs.
+EOF
+
+      - name: Commit files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b $PR_BRANCH
+          git add docs/README.md
+          git commit -m "docs: add OctoAcme project management README" || echo "No changes to commit"
+          git push --set-upstream origin $PR_BRANCH --force
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ env.PR_BRANCH }}
+          title: ${{ env.PR_TITLE }}
+          body: ${{ env.PR_BODY }}
+          labels: documentation
+          reviewers: merleen
